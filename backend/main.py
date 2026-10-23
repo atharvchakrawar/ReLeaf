@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from db import init_db, get_db, log_event
 import clock
 import seed
+import planner
 
 app = FastAPI(title="ReLeaf Backend")
 
@@ -139,6 +140,26 @@ def get_batch(batch_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Batch not found")
     return serialize_batch(row, clock.get_current_sim_time())
+
+
+@app.post("/suggest")
+async def suggest_plans_route(request: Request):
+    data = await request.json()
+    batch_id = data.get("batch_id")
+    if not batch_id:
+        raise HTTPException(status_code=400, detail="batch_id is required")
+    res = planner.suggest_plans_for_batch(batch_id)
+    if "error" in res:
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
+
+
+@app.post("/batches/{batch_id}/suggest")
+def suggest_plans_batch_route(batch_id: str):
+    res = planner.suggest_plans_for_batch(batch_id)
+    if "error" in res:
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
 
 
 # Shelter Helpers
