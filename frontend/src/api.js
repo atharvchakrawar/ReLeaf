@@ -1,6 +1,6 @@
 // api.js — ReLeaf API client
-// Set USE_MOCK = false when the backend is running at http://localhost:8000
-const USE_MOCK = true;
+// Connected to real FastAPI backend at http://localhost:8000
+const USE_MOCK = false;
 const BASE_URL = 'http://localhost:8000';
 
 async function call(method, path, body = null) {

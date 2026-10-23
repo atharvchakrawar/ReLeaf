@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import L from 'leaflet';
 
 /**
  * RiderMiniMap — small Leaflet map embedded in the Rider page.
@@ -10,41 +11,31 @@ export default function RiderMiniMap({ rider, allRiders, shelters, job }) {
   const mapInstance = useRef(null);
   const markersRef = useRef([]);
   const lineRef = useRef(null);
-  const leafletRef = useRef(null);
 
-  // Load Leaflet once
+  // Initialize Leaflet map
   useEffect(() => {
-    if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id = 'leaflet-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(link);
+    if (!mapRef.current) return;
+    if (mapInstance.current) {
+      mapInstance.current.remove();
+      mapInstance.current = null;
     }
-    let cancelled = false;
 
-    const loadL = () => new Promise(resolve => {
-      if (window.L) { resolve(window.L); return; }
-      const s = document.createElement('script');
-      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-      s.onload = () => resolve(window.L);
-      document.head.appendChild(s);
-    });
+    const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: false })
+      .setView([18.524, 73.852], 15);
+    mapInstance.current = map;
 
-    loadL().then(L => {
-      if (cancelled || !mapRef.current || mapInstance.current) return;
-      leafletRef.current = L;
-      const map = L.map(mapRef.current, { zoomControl: true, scrollWheelZoom: false })
-        .setView([18.524, 73.852], 15);
-      mapInstance.current = map;
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19
-      }).addTo(map);
-    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19
+    }).addTo(map);
+
+    setTimeout(() => {
+      if (mapInstance.current) {
+        mapInstance.current.invalidateSize();
+      }
+    }, 200);
 
     return () => {
-      cancelled = true;
       if (mapInstance.current) {
         mapInstance.current.remove();
         mapInstance.current = null;
@@ -54,9 +45,8 @@ export default function RiderMiniMap({ rider, allRiders, shelters, job }) {
 
   // Update markers whenever rider/job data changes
   useEffect(() => {
-    const L = leafletRef.current;
     const map = mapInstance.current;
-    if (!L || !map || !rider) return;
+    if (!map || !rider) return;
 
     // Clear old markers and lines
     markersRef.current.forEach(m => m.remove());
