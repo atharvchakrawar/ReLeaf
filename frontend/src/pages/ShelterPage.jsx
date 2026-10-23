@@ -3,17 +3,33 @@ import { getShelters, updateShelter, getAssignments } from '../api.js';
 import { usePolling } from '../hooks/usePolling.js';
 
 const ITEM_LABELS = {
-  cooked_food: '🍱 Cooked Food', medical: '💊 Medical',
-  ration_kit: '📦 Ration Kit', infant_formula: '🍼 Infant Formula'
+  cooked_food: '🍱 Cooked Food',
+  medical: '💊 Medical',
+  ration_kit: '📦 Ration Kit',
+  infant_formula: '🍼 Infant Formula',
+  'Cooked Meals': '🍱 Cooked Meals',
+  Bread: '🍞 Bread',
+  Rice: '🍚 Rice',
+  'Medical Kits': '💊 Medical Kits',
+  'Raw Ration': '📦 Raw Ration'
 };
 
+const getKind = (s) => s.kind || (s.id?.startsWith('sv') ? 'salvage' : 'shelter');
+
 function ShelterCard({ shelter, assignments, onToggle, msgs }) {
-  // Find incoming deliveries for this shelter from assignments
-  const incoming_deliveries = assignments.filter(
-    a => a.shelter_id === shelter.id && ['reserved', 'in_transit'].includes(a.status)
-  );
+  const kind = getKind(shelter);
+
+  // Deliveries can come directly from backend shelter object or assignments list
+  const incoming_deliveries = (shelter.incoming_deliveries && shelter.incoming_deliveries.length > 0)
+    ? shelter.incoming_deliveries
+    : (assignments || []).filter(
+        a => a.shelter_id === shelter.id && ['reserved', 'in_transit', 'pending'].includes(a.status)
+      );
 
   const freeSpace = (item) => {
+    if (shelter.free_space && shelter.free_space[item] !== undefined) {
+      return shelter.free_space[item];
+    }
     const demand = (shelter.demand || {})[item] || 0;
     const inc = (shelter.incoming || {})[item] || 0;
     return Math.max(0, demand - inc);
@@ -27,7 +43,7 @@ function ShelterCard({ shelter, assignments, onToggle, msgs }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontWeight: 700, fontSize: '1.15rem' }}>{shelter.name}</span>
-          <span className={`badge badge-${shelter.kind}`}>{shelter.kind}</span>
+          <span className={`badge badge-${kind}`}>{kind}</span>
           <span className={`badge badge-${shelter.is_open ? 'available' : 'failed'}`}>
             {shelter.is_open ? 'Open' : 'Closed'}
           </span>
@@ -38,7 +54,7 @@ function ShelterCard({ shelter, assignments, onToggle, msgs }) {
       </div>
 
       {/* Toggles (only for real shelters) */}
-      {shelter.kind === 'shelter' && (
+      {kind === 'shelter' && (
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 14 }}>
           {[
             { field: 'is_open',          label: '🏠 Open' },
@@ -50,35 +66,24 @@ function ShelterCard({ shelter, assignments, onToggle, msgs }) {
                 onChange={() => onToggle(shelter, field)} style={{ width: 16, height: 16 }} />
               {label}
               {msgs[`${shelter.id}_${field}`] && (
-                <span className={`flash ${msgs[`${shelter.id}_${field}`].ok ? 'flash-ok' : 'flash-err'}`}>
+                <span className={`flash ${msgs[`${shelter.id}_${field}`].ok ? 'flash-ok' : 'flash-err'}`} style={{ fontSize: '0.75rem', padding: '1px 6px' }}>
                   {msgs[`${shelter.id}_${field}`].msg}
                 </span>
               )}
             </label>
           ))}
-        </div>
-      )}
-
-      {/* Dependency warnings */}
-      {shelter.kind === 'shelter' && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          {!shelter.has_clean_water && (
-            <div className="alert alert-warn" style={{ padding: '4px 10px', fontSize: '0.82rem' }}>
-              ⚠️ No clean water — infant_formula and ration_kit blocked
-            </div>
-          )}
-          {shelter.has_clean_water && !shelter.has_cooking_fuel && (
-            <div className="alert alert-warn" style={{ padding: '4px 10px', fontSize: '0.82rem' }}>
-              ⚠️ No cooking fuel — ration_kit blocked
-            </div>
+          {!depOk && shelter.is_open && (
+            <span style={{ fontSize: '0.8rem', color: 'var(--orange)', display: 'flex', alignItems: 'center', gap: 4 }}>
+              ⚠️ Missing water/fuel — cooked food blocked by Rule 3
+            </span>
           )}
         </div>
       )}
 
       {/* Demand table */}
-      {shelter.kind !== 'salvage' && Object.keys(shelter.demand || {}).length > 0 && (
+      {shelter.demand && Object.keys(shelter.demand).length > 0 && (
         <>
-          <div className="section-title" style={{ fontSize: '0.92rem', marginBottom: 6 }}>📊 Demand</div>
+          <div className="section-title" style={{ fontSize: '0.92rem', marginBottom: 6 }}>📊 Demand vs Capacity</div>
           <div className="table-wrap" style={{ marginBottom: 14 }}>
             <table>
               <thead>
@@ -110,27 +115,37 @@ function ShelterCard({ shelter, assignments, onToggle, msgs }) {
               <thead>
                 <tr>
                   <th>Assignment</th><th>Item</th><th>Qty</th>
-                  <th>ETA</th><th>Status</th><th>Confirm Code</th>
+                  <th>Rider</th><th>ETA</th><th>Status</th><th>Confirm Code</th>
                 </tr>
               </thead>
               <tbody>
-                {incoming_deliveries.map(d => (
-                  <tr key={d.id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{d.id}</td>
-                    <td>{ITEM_LABELS[d.item_type] || d.item_type || '—'}</td>
-                    <td>{d.quantity}</td>
-                    <td>{d.eta_minutes?.toFixed(1)} min</td>
-                    <td><span className={`badge badge-${d.status}`}>{d.status}</span></td>
-                    <td><span className="confirm-code">{d.confirm_code}</span></td>
-                  </tr>
-                ))}
+                {incoming_deliveries.map((d, i) => {
+                  const aid = d.assignment_id || d.id || `inc-${i}`;
+                  const qty = d.qty ?? d.quantity;
+                  const eta = d.eta_minutes != null ? `${Number(d.eta_minutes).toFixed(1)} min` : '—';
+                  return (
+                    <tr key={aid}>
+                      <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{aid}</td>
+                      <td>{ITEM_LABELS[d.item_type] || d.item_type || '—'}</td>
+                      <td>{qty}</td>
+                      <td><b>{d.rider_name || 'Assigned Rider'}</b></td>
+                      <td>{eta}</td>
+                      <td><span className={`badge badge-${d.status}`}>{d.status}</span></td>
+                      <td>
+                        <span className="confirm-code" style={{ fontSize: '1.2rem', padding: '2px 10px' }}>
+                          {d.confirm_code}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </>
       )}
 
-      {incoming_deliveries.length === 0 && shelter.kind !== 'salvage' && (
+      {incoming_deliveries.length === 0 && kind !== 'salvage' && (
         <div style={{ color: '#aaa', fontSize: '0.85rem' }}>No incoming deliveries right now.</div>
       )}
     </div>
@@ -142,8 +157,12 @@ export default function ShelterPage() {
   const [assignments, setAssignments] = useState([]);
   const [msgs, setMsgs] = useState({});
 
-  usePolling(async () => { setShelters(await getShelters()); }, 2000);
-  usePolling(async () => { setAssignments(await getAssignments()); }, 2000);
+  usePolling(async () => {
+    try { setShelters(await getShelters()); } catch (e) { console.error(e); }
+  }, 2000);
+  usePolling(async () => {
+    try { setAssignments(await getAssignments()); } catch (e) { console.error(e); }
+  }, 2000);
 
   const flash = (key, msg, ok) => {
     setMsgs(m => ({ ...m, [key]: { msg, ok } }));
@@ -160,8 +179,8 @@ export default function ShelterPage() {
 
   if (shelters === null) return <div className="page"><h1 className="page-title">🏠 Shelter Management</h1><div className="spinner" /></div>;
 
-  const normalShelters = shelters.filter(s => s.kind === 'shelter');
-  const salvageSinks   = shelters.filter(s => s.kind === 'salvage');
+  const normalShelters = shelters.filter(s => getKind(s) !== 'salvage');
+  const salvageSinks   = shelters.filter(s => getKind(s) === 'salvage');
 
   return (
     <div className="page">
