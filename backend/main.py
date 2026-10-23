@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from db import init_db, get_db, log_event
 import clock
+import seed
 
 app = FastAPI(title="ReLeaf Backend")
 
@@ -26,11 +27,23 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.on_event("startup")
 def on_startup():
     init_db()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT count(*) as count FROM shelters")
+    if cur.fetchone()["count"] == 0:
+        seed.reset_and_seed()
+    conn.close()
 
 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.post("/demo/reset")
+@app.post("/control/reset")
+def reset_demo():
+    return seed.reset_and_seed()
 
 
 # Clock Endpoints
