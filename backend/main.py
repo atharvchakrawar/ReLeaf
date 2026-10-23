@@ -187,6 +187,26 @@ async def create_assignment_route(request: Request):
     return res
 
 
+@app.post("/assign/auto")
+async def auto_assign_route(request: Request):
+    data = await request.json()
+    batch_id = data.get("batch_id")
+    if not batch_id:
+        raise HTTPException(status_code=400, detail="batch_id is required")
+    res, err = assignments.auto_dispatch_batch(batch_id)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return res
+
+
+@app.post("/batches/{batch_id}/auto-dispatch")
+def auto_dispatch_batch_route(batch_id: str):
+    res, err = assignments.auto_dispatch_batch(batch_id)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return res
+
+
 @app.post("/riders/{rider_id}/pickup")
 async def rider_pickup_route(rider_id: str, request: Request):
     data = await request.json()

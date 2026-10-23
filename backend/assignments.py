@@ -235,6 +235,13 @@ def cancel_assignment(rider_id: str, assignment_id: str):
     return True, ""
 
 
+def auto_dispatch_batch(batch_id: str):
+    plan = find_or_build_plan(batch_id)
+    if not plan:
+        return None, "No viable delivery plan found for this batch"
+    return create_assignment(batch_id, plan_id=plan["plan_id"])
+
+
 def list_all_assignments():
     conn = get_db()
     cur = conn.cursor()

@@ -59,6 +59,22 @@ def countdown_eta_minutes(cur, delta_mins):
         cur.execute("UPDATE assignments SET eta_minutes = ? WHERE assignment_id = ?", (round(new_eta, 1), a["assignment_id"]))
 
 
+def redispatch_freed_batches():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM batches WHERE status = 'available' AND remaining_qty > 0")
+    batches = cur.fetchall()
+    conn.close()
+    for b in batches:
+        conn2 = get_db()
+        cur2 = conn2.cursor()
+        cur2.execute("SELECT count(*) as idle_cnt FROM riders WHERE status = 'idle' AND is_killed = 0 AND trust_score >= 0.70")
+        has_idle = cur2.fetchone()["idle_cnt"] > 0
+        conn2.close()
+        if has_idle:
+            assignments.auto_dispatch_batch(b["id"])
+
+
 def run_tick():
     conn = get_db()
     cur = conn.cursor()
@@ -76,6 +92,9 @@ def run_tick():
 
     conn.commit()
     conn.close()
+
+    # Re-dispatch any freed batches
+    redispatch_freed_batches()
 
 
 def recovery_loop():
