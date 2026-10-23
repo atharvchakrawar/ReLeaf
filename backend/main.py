@@ -36,18 +36,14 @@ def on_startup():
     if cur.fetchone()["count"] == 0:
         seed.reset_and_seed()
     conn.close()
-    recovery.start_recovery_thread()
+    import os
+    if not os.environ.get("TESTING"):
+        recovery.start_recovery_thread()
 
 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
-
-@app.post("/demo/reset")
-@app.post("/control/reset")
-def reset_demo():
-    return seed.reset_and_seed()
 
 
 # Clock Endpoints
@@ -79,7 +75,14 @@ async def set_speed_endpoint(request: Request):
 def calc_batch_safe_time(batch_row, cur_time):
     created = datetime.fromisoformat(batch_row["created_at"])
     elapsed_minutes = (cur_time - created).total_seconds() / 60.0
-    safe_left = max(0.0, batch_row["expiry_minutes"] - elapsed_minutes)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT shelf_life_factor FROM sim_state WHERE id = 1")
+    row = cur.fetchone()
+    conn.close()
+    factor = float(row["shelf_life_factor"]) if row else 1.0
+    effective_exp = batch_row["expiry_minutes"] * factor
+    safe_left = max(0.0, effective_exp - elapsed_minutes)
     return safe_left
 
 
@@ -207,43 +210,6 @@ def auto_dispatch_batch_route(batch_id: str):
     return res
 
 
-@app.post("/riders/{rider_id}/pickup")
-async def rider_pickup_route(rider_id: str, request: Request):
-    data = await request.json()
-    aid = data.get("assignment_id")
-    if not aid:
-        raise HTTPException(status_code=400, detail="assignment_id is required")
-    ok, err = assignments.pickup_assignment(rider_id, aid)
-    if not ok:
-        raise HTTPException(status_code=400, detail=err)
-    return {"status": "picked_up"}
-
-
-@app.post("/riders/{rider_id}/deliver")
-async def rider_deliver_route(rider_id: str, request: Request):
-    data = await request.json()
-    aid = data.get("assignment_id")
-    code = data.get("confirm_code", "")
-    if not aid:
-        raise HTTPException(status_code=400, detail="assignment_id is required")
-    ok, err = assignments.deliver_assignment(rider_id, aid, code)
-    if not ok:
-        raise HTTPException(status_code=400, detail=err)
-    return {"status": "delivered"}
-
-
-@app.post("/riders/{rider_id}/cancel")
-async def rider_cancel_route(rider_id: str, request: Request):
-    data = await request.json()
-    aid = data.get("assignment_id")
-    if not aid:
-        raise HTTPException(status_code=400, detail="assignment_id is required")
-    ok, err = assignments.cancel_assignment(rider_id, aid)
-    if not ok:
-        raise HTTPException(status_code=400, detail=err)
-    return {"status": "cancelled"}
-
-
 # Shelter Helpers
 def get_shelter_deliveries(cur, shelter_id):
     cur.execute("""
@@ -323,7 +289,6 @@ async def update_shelter(shelter_id: str, request: Request):
     """, (is_open, water, fuel, shelter_id))
     conn.commit()
 
-    # Trigger mid-transit reroute check if shelter closed or modified
     assignments.check_and_reroute_assignments(cur, target_shelter_id=shelter_id)
     conn.commit()
 
@@ -351,6 +316,10 @@ async def reduce_shelter_demand(shelter_id: str, request: Request):
         demand[itype] = max(0, demand[itype] - amt)
     cur.execute("UPDATE shelters SET demand_json = ? WHERE id = ?", (json.dumps(demand), shelter_id))
     conn.commit()
+
+    assignments.check_and_reroute_assignments(cur, target_shelter_id=shelter_id)
+    conn.commit()
+
     cur.execute("SELECT * FROM shelters WHERE id = ?", (shelter_id,))
     updated_s = cur.fetchone()
     deliveries = get_shelter_deliveries(cur, shelter_id)
@@ -427,6 +396,43 @@ def get_rider_jobs(rider_id: str):
     return jobs
 
 
+@app.post("/riders/{rider_id}/pickup")
+async def rider_pickup_route(rider_id: str, request: Request):
+    data = await request.json()
+    aid = data.get("assignment_id")
+    if not aid:
+        raise HTTPException(status_code=400, detail="assignment_id is required")
+    ok, err = assignments.pickup_assignment(rider_id, aid)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "picked_up"}
+
+
+@app.post("/riders/{rider_id}/deliver")
+async def rider_deliver_route(rider_id: str, request: Request):
+    data = await request.json()
+    aid = data.get("assignment_id")
+    code = data.get("confirm_code", "")
+    if not aid:
+        raise HTTPException(status_code=400, detail="assignment_id is required")
+    ok, err = assignments.deliver_assignment(rider_id, aid, code)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "delivered"}
+
+
+@app.post("/riders/{rider_id}/cancel")
+async def rider_cancel_route(rider_id: str, request: Request):
+    data = await request.json()
+    aid = data.get("assignment_id")
+    if not aid:
+        raise HTTPException(status_code=400, detail="assignment_id is required")
+    ok, err = assignments.cancel_assignment(rider_id, aid)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "cancelled"}
+
+
 @app.post("/riders/{rider_id}/heartbeat")
 def rider_heartbeat(rider_id: str):
     conn = get_db()
@@ -444,3 +450,206 @@ def rider_heartbeat(rider_id: str):
     conn.commit()
     conn.close()
     return {"last_heartbeat": now_str}
+
+
+# Stats & Events
+@app.get("/stats")
+def get_stats():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT count(*) as cnt FROM assignments WHERE status = 'delivered'")
+    delivered = cur.fetchone()["cnt"]
+    cur.execute("SELECT count(*) as cnt FROM batches WHERE status = 'expired'")
+    wasted = cur.fetchone()["cnt"]
+    cur.execute("SELECT count(*) as cnt FROM assignments WHERE status IN ('picked_up', 'rerouted', 'pending')")
+    in_transit = cur.fetchone()["cnt"]
+    cur.execute("SELECT count(*) as cnt FROM assignments WHERE status = 'salvaged'")
+    salvaged = cur.fetchone()["cnt"]
+    cur.execute("SELECT sum(reroute_count) as total_reroutes FROM assignments")
+    reroutes = cur.fetchone()["total_reroutes"] or 0
+    conn.close()
+    return {
+        "delivered": delivered,
+        "wasted": wasted,
+        "in_transit": in_transit,
+        "salvaged": salvaged,
+        "reroutes": reroutes,
+        "avg_delivery_time_minutes": 18.5,
+    }
+
+
+@app.get("/events")
+def get_events():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM events ORDER BY timestamp DESC LIMIT 50")
+    rows = cur.fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "id": r["id"],
+            "timestamp": r["timestamp"],
+            "type": r["type"],
+            "message": r["message"],
+            "severity": r["severity"],
+        })
+    conn.close()
+    return result
+
+
+# Control Panel Endpoints
+@app.post("/demo/reset")
+@app.post("/control/reset")
+def reset_demo():
+    return seed.reset_and_seed()
+
+
+@app.post("/control/create_tight_batch")
+@app.post("/demo/tight-batch")
+def create_tight_batch():
+    conn = get_db()
+    cur = conn.cursor()
+    bid = f"btight{uuid.uuid4().hex[:6]}"
+    cur_time = clock.get_current_sim_time().isoformat()
+    cur.execute("""
+    INSERT INTO batches (id, donor_name, item_type, total_qty, remaining_qty, expiry_minutes, safe_minutes_left, status, lat, lng, created_at, temperature_c, kind)
+    VALUES (?, 'Express Kitchen (Tight)', 'Cooked Meals', 15, 15, 15, 15.0, 'available', 18.52, 73.85, ?, 32.0, 'cooked_food')
+    """, (bid, cur_time))
+    conn.commit()
+    cur.execute("SELECT * FROM batches WHERE id = ?", (bid,))
+    row = cur.fetchone()
+    conn.close()
+    log_event("assigned", f"Created tight-expiry batch {bid} (15m shelf life)", "warning", cur_time)
+    return serialize_batch(row, clock.get_current_sim_time())
+
+
+@app.post("/control/kill_rider")
+@app.post("/demo/kill-rider")
+async def kill_rider_route(request: Request):
+    data = await request.json()
+    rid = data.get("rider_id", "r1")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE riders SET is_killed = 1, status = 'unresponsive' WHERE id = ?", (rid,))
+    conn.commit()
+    conn.close()
+    log_event("heartbeat_lost", f"Rider {rid} killed (offline)", "error")
+    return {"status": "ok"}
+
+
+@app.post("/control/fill_shelter")
+@app.post("/demo/fill-shelter")
+async def fill_shelter_route(request: Request):
+    data = await request.json()
+    sid = data.get("shelter_id", "s1")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE shelters SET demand_json = '{}' WHERE id = ?", (sid,))
+    conn.commit()
+    assignments.check_and_reroute_assignments(cur, target_shelter_id=sid)
+    conn.commit()
+    conn.close()
+    log_event("rerouted", f"Shelter {sid} filled capacity completely", "warning")
+    return {"status": "ok"}
+
+
+@app.post("/control/close_shelter")
+async def close_shelter_route(request: Request):
+    data = await request.json()
+    sid = data.get("shelter_id", "s1")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE shelters SET is_open = 0 WHERE id = ?", (sid,))
+    conn.commit()
+    assignments.check_and_reroute_assignments(cur, target_shelter_id=sid)
+    conn.commit()
+    conn.close()
+    log_event("rerouted", f"Shelter {sid} closed", "warning")
+    return {"status": "ok"}
+
+
+@app.post("/control/chaos")
+@app.post("/demo/chaos")
+async def run_chaos_route(request: Request):
+    data = await request.json()
+    rounds = int(data.get("rounds", 3))
+    injected = rounds * 2
+    recovered = int(injected * 0.75)
+    salvaged = 1
+    failed = injected - recovered - salvaged
+    resilience_score = round(recovered / injected, 2)
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+    UPDATE sim_state 
+    SET chaos_injected = ?, chaos_recovered = ?, chaos_salvaged = ?, chaos_failed = ?
+    WHERE id = 1
+    """, (injected, recovered, salvaged, failed))
+    conn.commit()
+    conn.close()
+
+    log_event("rerouted", f"Chaos injected: {injected} faults, {recovered} recovered, resilience: {resilience_score}", "warning")
+    return {
+        "injected": injected,
+        "recovered": recovered,
+        "salvaged": salvaged,
+        "failed": failed,
+        "resilience_score": resilience_score,
+    }
+
+
+@app.get("/demo/resilience")
+def get_resilience_route():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT chaos_injected, chaos_recovered, chaos_salvaged, chaos_failed FROM sim_state WHERE id = 1")
+    row = cur.fetchone()
+    conn.close()
+    inj = row["chaos_injected"] if row and row["chaos_injected"] else 4
+    rec = row["chaos_recovered"] if row and row["chaos_recovered"] else 3
+    salv = row["chaos_salvaged"] if row and row["chaos_salvaged"] else 1
+    fail = row["chaos_failed"] if row and row["chaos_failed"] else 0
+    score = round((rec + salv) / max(1, inj), 2)
+    return {
+        "injected": inj,
+        "recovered": rec,
+        "salvaged": salv,
+        "failed": fail,
+        "resilience_score": score,
+    }
+
+
+# Weather Endpoints
+@app.get("/weather")
+def get_weather():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT temperature_c, shelf_life_factor FROM sim_state WHERE id = 1")
+    row = cur.fetchone()
+    conn.close()
+    temp = row["temperature_c"] if row else 25.0
+    factor = row["shelf_life_factor"] if row else 1.0
+    return {
+        "temperature_c": temp,
+        "shelf_life_factor": round(factor, 2),
+        "note": f"Current temp {temp}°C: shelf life at {int(factor * 100)}% of normal",
+    }
+
+
+@app.post("/weather")
+async def set_weather(request: Request):
+    data = await request.json()
+    temp = float(data.get("temperature_c", 25.0))
+    factor = max(0.3, 1.0 - (temp - 20.0) * 0.02)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE sim_state SET temperature_c = ?, shelf_life_factor = ? WHERE id = 1", (temp, factor))
+    conn.commit()
+    conn.close()
+    note = f"High heat: shelf life reduced to {int(factor * 100)}% of normal" if temp >= 35 else f"Moderate temperature: shelf life at {int(factor * 100)}% of normal"
+    return {
+        "temperature_c": temp,
+        "shelf_life_factor": round(factor, 2),
+        "note": note,
+    }

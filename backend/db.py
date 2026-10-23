@@ -7,8 +7,10 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "releaf.db")
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     return conn
 
 
@@ -131,9 +133,14 @@ def init_db():
     conn.close()
 
 
-def log_event(event_type: str, message: str, severity: str = "info", timestamp: str = None):
-    conn = get_db()
-    cur = conn.cursor()
+def log_event(event_type: str, message: str, severity: str = "info", timestamp: str = None, cur=None):
+    close_conn = False
+    conn = None
+    if cur is None:
+        conn = get_db()
+        cur = conn.cursor()
+        close_conn = True
+
     eid = f"e{uuid.uuid4().hex[:8]}"
     if not timestamp:
         cur.execute("SELECT sim_time FROM sim_state WHERE id = 1")
@@ -143,6 +150,8 @@ def log_event(event_type: str, message: str, severity: str = "info", timestamp: 
     INSERT INTO events (id, timestamp, type, message, severity)
     VALUES (?, ?, ?, ?, ?)
     """, (eid, timestamp, event_type, message, severity))
-    conn.commit()
-    conn.close()
+
+    if close_conn and conn:
+        conn.commit()
+        conn.close()
     return eid

@@ -115,15 +115,10 @@ def create_assignment(batch_id: str, plan_id: str = None, rider_id: str = None, 
         plan["explanation"], plan["explanation"], lease_expiry, now_dt.isoformat(), plan["eta_minutes"]
     ))
 
-    # Update batch remaining qty
     new_rem = b["remaining_qty"] - assign_qty
     b_status = "assigned" if new_rem == 0 else b["status"]
     cur.execute("UPDATE batches SET remaining_qty = ?, status = ? WHERE id = ?", (new_rem, b_status, batch_id))
-
-    # Update rider status
     cur.execute("UPDATE riders SET status = 'en_route', active_assignment_id = ? WHERE id = ?", (aid, r["id"]))
-
-    # Update shelter incoming
     update_shelter_incoming(cur, s["id"], b["item_type"], assign_qty)
 
     conn.commit()
@@ -181,7 +176,7 @@ def deliver_assignment(rider_id: str, assignment_id: str, confirm_code: str):
         conn.close()
         return False, "Assignment not found for rider"
 
-    if confirm_code and a["confirm_code"] and confirm_code.strip() != a["confirm_code"].strip():
+    if not confirm_code or str(confirm_code).strip() != str(a["confirm_code"]).strip():
         conn.close()
         return False, "Wrong confirmation code"
 
@@ -191,7 +186,6 @@ def deliver_assignment(rider_id: str, assignment_id: str, confirm_code: str):
     update_shelter_incoming(cur, a["shelter_id"], a["item_type"], -a["qty"])
     update_shelter_demand(cur, a["shelter_id"], a["item_type"], -a["qty"])
 
-    # Check if all assignments for this batch are delivered and remaining is 0
     cur.execute("SELECT remaining_qty FROM batches WHERE id = ?", (a["batch_id"],))
     b = cur.fetchone()
     if b and b["remaining_qty"] == 0:
@@ -223,7 +217,6 @@ def cancel_assignment(rider_id: str, assignment_id: str):
     cur.execute("UPDATE assignments SET status = 'cancelled' WHERE assignment_id = ?", (assignment_id,))
     cur.execute("UPDATE riders SET status = 'idle', active_assignment_id = NULL WHERE id = ?", (rider_id,))
 
-    # If cancelled before pickup, return quantity to batch
     if a["stage"] == "to_pickup":
         cur.execute("UPDATE batches SET remaining_qty = remaining_qty + ?, status = 'available' WHERE id = ?", (a["qty"], a["batch_id"]))
 
@@ -236,7 +229,7 @@ def cancel_assignment(rider_id: str, assignment_id: str):
 
 
 def find_reroute_shelter(cur, a, b_dict):
-    # Rule 11 & Rule 7: First check Plan B if available and open
+    # Rule 11 & Rule 7: First check Plan B
     if a["plan_b_shelter_id"]:
         cur.execute("SELECT * FROM shelters WHERE id = ? AND is_open = 1 AND kind = 'shelter'", (a["plan_b_shelter_id"],))
         pb = cur.fetchone()
@@ -244,19 +237,26 @@ def find_reroute_shelter(cur, a, b_dict):
             ok_comp, _ = rules.check_shelter_compatibility(pb, a["item_type"], b_dict.get("kind", "food"))
             if ok_comp:
                 return pb
-    # Otherwise find nearest compatible open shelter with capacity
+    # Otherwise check open compatible shelters
     cur.execute("SELECT * FROM shelters WHERE is_open = 1 AND kind = 'shelter' AND id != ?", (a["shelter_id"],))
-    candidates = cur.fetchall()
-    for s in candidates:
+    for s in cur.fetchall():
         ok_comp, _ = rules.check_shelter_compatibility(s, a["item_type"], b_dict.get("kind", "food"))
         if not ok_comp:
             continue
         demand = json.loads(s["demand_json"] or "{}")
         incoming = json.loads(s["incoming_json"] or "{}")
         free = demand.get(a["item_type"], 0) - incoming.get(a["item_type"], 0)
-        if free >= a["qty"] or free > 0:
+        if free > 0:
             return s
     return None
+
+
+def find_salvage_sink(cur, a):
+    # Rule 14: cooked_food can go to salvage sink, medical cannot
+    if "Medical" in a["item_type"] or a["item_type"] == "medical":
+        return None
+    cur.execute("SELECT * FROM shelters WHERE kind IN ('community_fridge', 'animal_feed', 'compost')")
+    return cur.fetchone()
 
 
 def reroute_single_assignment(cur, a, now_dt):
@@ -266,11 +266,9 @@ def reroute_single_assignment(cur, a, now_dt):
 
     new_s = find_reroute_shelter(cur, a, b_dict)
     if new_s:
-        # Move incoming cargo from old shelter to new shelter
         update_shelter_incoming(cur, a["shelter_id"], a["item_type"], -a["qty"])
         update_shelter_incoming(cur, new_s["id"], a["item_type"], a["qty"])
-
-        d_km = rules.calc_distance_km(a["s_lat"] if "s_lat" in a.keys() else 18.52, 73.85, new_s["lat"], new_s["lng"])
+        d_km = rules.calc_distance_km(new_s["lat"], new_s["lng"], 18.52, 73.85)
         new_eta = max(5.0, round(d_km * 3.0 + 4, 1))
 
         cur.execute("""
@@ -278,11 +276,25 @@ def reroute_single_assignment(cur, a, now_dt):
         SET shelter_id = ?, status = 'rerouted', reroute_count = reroute_count + 1,
             eta_minutes = ?, explanation = ?
         WHERE assignment_id = ?
-        """, (new_s["id"], new_eta, f"Rerouted to {new_s['name']} — previous shelter unavailable", a["assignment_id"]))
+        """, (new_s["id"], new_eta, f"Rerouted to {new_s['name']} — previous destination closed/full", a["assignment_id"]))
+        log_event("rerouted", f"Assignment {a['assignment_id']} rerouted to {new_s['name']}", "warning", now_dt.isoformat(), cur=cur)
+        return "rerouted"
 
-        log_event("rerouted", f"Assignment {a['assignment_id']} rerouted to {new_s['name']} — previous destination unavailable", "warning", now_dt.isoformat())
-        return True
-    return False
+    # Try salvage sink (Rule 14)
+    sink = find_salvage_sink(cur, a)
+    if sink:
+        update_shelter_incoming(cur, a["shelter_id"], a["item_type"], -a["qty"])
+        cur.execute("UPDATE assignments SET shelter_id = ?, status = 'salvaged', explanation = 'Salvaged to community sink' WHERE assignment_id = ?", (sink["id"], a["assignment_id"]))
+        cur.execute("UPDATE riders SET status = 'idle', active_assignment_id = NULL WHERE id = ?", (a["rider_id"],))
+        log_event("salvaged", f"Assignment {a['assignment_id']} salvaged to {sink['name']}", "warning", now_dt.isoformat(), cur=cur)
+        return "salvaged"
+
+    # Cannot salvage (e.g. medical kits) -> failed
+    update_shelter_incoming(cur, a["shelter_id"], a["item_type"], -a["qty"])
+    cur.execute("UPDATE assignments SET status = 'failed', explanation = 'Cannot be salvaged: no fallback destination' WHERE assignment_id = ?", (a["assignment_id"],))
+    cur.execute("UPDATE riders SET status = 'idle', active_assignment_id = NULL WHERE id = ?", (a["rider_id"],))
+    log_event("failed", f"Assignment {a['assignment_id']} failed: cannot be salvaged", "error", now_dt.isoformat(), cur=cur)
+    return "failed"
 
 
 def check_and_reroute_assignments(cur, target_shelter_id=None):
@@ -302,9 +314,7 @@ def check_and_reroute_assignments(cur, target_shelter_id=None):
         demand = json.loads(a["demand_json"] or "{}")
         incoming = json.loads(a["incoming_json"] or "{}")
         free = demand.get(a["item_type"], 0) - incoming.get(a["item_type"], 0)
-        # Reroute needed if shelter closed or free space collapsed below 0
-        needs_reroute = (int(a["is_open"]) == 0) or (demand.get(a["item_type"], 0) == 0 and free < 0)
-        if needs_reroute:
+        if (int(a["is_open"]) == 0) or (demand.get(a["item_type"], 0) == 0):
             reroute_single_assignment(cur, a, now_dt)
 
 
