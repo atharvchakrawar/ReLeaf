@@ -89,6 +89,7 @@ def run_tick():
     check_unresponsive_riders(cur, now_dt)
     release_expired_leases(cur, now_dt)
     countdown_eta_minutes(cur, delta_mins)
+    assignments.check_and_reroute_assignments(cur)
 
     conn.commit()
     conn.close()

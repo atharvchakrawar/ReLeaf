@@ -322,6 +322,11 @@ async def update_shelter(shelter_id: str, request: Request):
     WHERE id = ?
     """, (is_open, water, fuel, shelter_id))
     conn.commit()
+
+    # Trigger mid-transit reroute check if shelter closed or modified
+    assignments.check_and_reroute_assignments(cur, target_shelter_id=shelter_id)
+    conn.commit()
+
     cur.execute("SELECT * FROM shelters WHERE id = ?", (shelter_id,))
     updated_s = cur.fetchone()
     deliveries = get_shelter_deliveries(cur, shelter_id)

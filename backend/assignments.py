@@ -235,6 +235,79 @@ def cancel_assignment(rider_id: str, assignment_id: str):
     return True, ""
 
 
+def find_reroute_shelter(cur, a, b_dict):
+    # Rule 11 & Rule 7: First check Plan B if available and open
+    if a["plan_b_shelter_id"]:
+        cur.execute("SELECT * FROM shelters WHERE id = ? AND is_open = 1 AND kind = 'shelter'", (a["plan_b_shelter_id"],))
+        pb = cur.fetchone()
+        if pb:
+            ok_comp, _ = rules.check_shelter_compatibility(pb, a["item_type"], b_dict.get("kind", "food"))
+            if ok_comp:
+                return pb
+    # Otherwise find nearest compatible open shelter with capacity
+    cur.execute("SELECT * FROM shelters WHERE is_open = 1 AND kind = 'shelter' AND id != ?", (a["shelter_id"],))
+    candidates = cur.fetchall()
+    for s in candidates:
+        ok_comp, _ = rules.check_shelter_compatibility(s, a["item_type"], b_dict.get("kind", "food"))
+        if not ok_comp:
+            continue
+        demand = json.loads(s["demand_json"] or "{}")
+        incoming = json.loads(s["incoming_json"] or "{}")
+        free = demand.get(a["item_type"], 0) - incoming.get(a["item_type"], 0)
+        if free >= a["qty"] or free > 0:
+            return s
+    return None
+
+
+def reroute_single_assignment(cur, a, now_dt):
+    cur.execute("SELECT * FROM batches WHERE id = ?", (a["batch_id"],))
+    b = cur.fetchone()
+    b_dict = dict(b) if b else {}
+
+    new_s = find_reroute_shelter(cur, a, b_dict)
+    if new_s:
+        # Move incoming cargo from old shelter to new shelter
+        update_shelter_incoming(cur, a["shelter_id"], a["item_type"], -a["qty"])
+        update_shelter_incoming(cur, new_s["id"], a["item_type"], a["qty"])
+
+        d_km = rules.calc_distance_km(a["s_lat"] if "s_lat" in a.keys() else 18.52, 73.85, new_s["lat"], new_s["lng"])
+        new_eta = max(5.0, round(d_km * 3.0 + 4, 1))
+
+        cur.execute("""
+        UPDATE assignments 
+        SET shelter_id = ?, status = 'rerouted', reroute_count = reroute_count + 1,
+            eta_minutes = ?, explanation = ?
+        WHERE assignment_id = ?
+        """, (new_s["id"], new_eta, f"Rerouted to {new_s['name']} — previous shelter unavailable", a["assignment_id"]))
+
+        log_event("rerouted", f"Assignment {a['assignment_id']} rerouted to {new_s['name']} — previous destination unavailable", "warning", now_dt.isoformat())
+        return True
+    return False
+
+
+def check_and_reroute_assignments(cur, target_shelter_id=None):
+    now_dt = clock.get_current_sim_time()
+    query = """
+    SELECT a.*, s.is_open, s.has_clean_water, s.has_cooking_fuel, s.demand_json, s.incoming_json, s.name as shelter_name
+    FROM assignments a
+    JOIN shelters s ON a.shelter_id = s.id
+    WHERE a.status IN ('pending', 'picked_up', 'rerouted')
+    """
+    if target_shelter_id:
+        query += f" AND a.shelter_id = '{target_shelter_id}'"
+
+    cur.execute(query)
+    active = cur.fetchall()
+    for a in active:
+        demand = json.loads(a["demand_json"] or "{}")
+        incoming = json.loads(a["incoming_json"] or "{}")
+        free = demand.get(a["item_type"], 0) - incoming.get(a["item_type"], 0)
+        # Reroute needed if shelter closed or free space collapsed below 0
+        needs_reroute = (int(a["is_open"]) == 0) or (demand.get(a["item_type"], 0) == 0 and free < 0)
+        if needs_reroute:
+            reroute_single_assignment(cur, a, now_dt)
+
+
 def auto_dispatch_batch(batch_id: str):
     plan = find_or_build_plan(batch_id)
     if not plan:
