@@ -18,7 +18,7 @@ export default function Nav({ page, setPage, clock }) {
       {clock && (
         <div className="clock-bar">
           <span className="clock-time">
-            🕐 {new Date(clock.sim_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            🕐 t={clock.now?.toFixed(1)}
           </span>
           <span className="clock-speed">{clock.speed}×</span>
         </div>

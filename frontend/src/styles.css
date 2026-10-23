@@ -114,25 +114,48 @@ body { font-family: var(--font); background: #f9f9f9; color: #222; min-height: 1
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.badge-available   { background: var(--green-bg);  color: var(--green); }
-.badge-assigned    { background: var(--blue-bg);   color: var(--blue); }
-.badge-expired     { background: var(--red-bg);    color: var(--red); }
-.badge-delivered   { background: var(--green-bg);  color: var(--green); }
-.badge-failed      { background: var(--red-bg);    color: var(--red); }
-.badge-rerouted    { background: var(--orange-bg); color: var(--orange); }
-.badge-salvaged    { background: var(--purple-bg); color: var(--purple); }
-.badge-pending     { background: var(--gray-bg);   color: var(--gray); }
-.badge-picked_up   { background: var(--blue-bg);   color: var(--blue); }
-.badge-idle        { background: var(--green-bg);  color: var(--green); }
-.badge-en_route    { background: var(--blue-bg);   color: var(--blue); }
-.badge-returning   { background: var(--orange-bg); color: var(--orange); }
-.badge-to_pickup   { background: var(--orange-bg); color: var(--orange); }
-.badge-to_shelter  { background: var(--green-bg);  color: var(--green); }
-.badge-info        { background: var(--blue-bg);   color: var(--blue); }
-.badge-warning     { background: var(--orange-bg); color: var(--orange); }
-.badge-error       { background: var(--red-bg);    color: var(--red); }
-.badge-open        { background: var(--green-bg);  color: var(--green); }
-.badge-closed      { background: var(--red-bg);    color: var(--red); }
+/* Batch status */
+.badge-open                 { background: var(--green-bg);  color: var(--green); }
+.badge-partially_assigned   { background: var(--blue-bg);   color: var(--blue); }
+.badge-fully_assigned       { background: var(--blue-bg);   color: var(--blue); }
+.badge-expired              { background: var(--red-bg);    color: var(--red); }
+/* Assignment status */
+.badge-reserved             { background: var(--gray-bg);   color: var(--gray); }
+.badge-in_transit           { background: var(--blue-bg);   color: var(--blue); }
+.badge-delivered            { background: var(--green-bg);  color: var(--green); }
+.badge-released             { background: var(--gray-bg);   color: var(--gray); }
+.badge-failed               { background: var(--red-bg);    color: var(--red); }
+.badge-salvaged             { background: var(--purple-bg); color: var(--purple); }
+/* Stage */
+.badge-to_pickup            { background: var(--orange-bg); color: var(--orange); }
+.badge-to_shelter           { background: var(--blue-bg);   color: var(--blue); }
+.badge-done                 { background: var(--green-bg);  color: var(--green); }
+/* Risk */
+.badge-safe                 { background: var(--green-bg);  color: var(--green); }
+.badge-urgent               { background: var(--orange-bg); color: var(--orange); }
+.badge-critical             { background: var(--red-bg);    color: var(--red); }
+/* Rider status */
+.badge-available            { background: var(--green-bg);  color: var(--green); }
+.badge-assigned             { background: var(--blue-bg);   color: var(--blue); }
+.badge-unresponsive         { background: var(--red-bg);    color: var(--red); }
+.badge-standby              { background: var(--orange-bg); color: var(--orange); }
+/* Shelter kind */
+.badge-shelter              { background: var(--blue-bg);   color: var(--blue); }
+.badge-salvage              { background: var(--purple-bg); color: var(--purple); }
+/* Events */
+.badge-info                 { background: var(--blue-bg);   color: var(--blue); }
+.badge-warning              { background: var(--orange-bg); color: var(--orange); }
+.badge-error                { background: var(--red-bg);    color: var(--red); }
+/* Open/closed */
+.badge-open_shelter         { background: var(--green-bg);  color: var(--green); }
+.badge-closed               { background: var(--red-bg);    color: var(--red); }
+/* Item types */
+.badge-cooked_food          { background: #fff3e0; color: #e65100; }
+.badge-medical              { background: #e8f5e9; color: #2e7d32; }
+.badge-ration_kit           { background: var(--blue-bg);   color: var(--blue); }
+.badge-infant_formula       { background: #fce4ec; color: #c2185b; }
+/* Rerouted (legacy compat) */
+.badge-rerouted             { background: var(--orange-bg); color: var(--orange); }
 
 /* ---- Buttons ---- */
 .btn {
