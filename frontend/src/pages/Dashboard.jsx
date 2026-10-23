@@ -49,15 +49,15 @@ export default function Dashboard() {
       {stats === null ? <Spinner /> : (
         <div className="stat-cards">
           {[
-            { label: 'Delivered',    value: stats.delivered_qty,        color: 'var(--green)' },
-            { label: 'Wasted',       value: stats.wasted_qty,           color: 'var(--red)' },
-            { label: 'In Transit',   value: stats.in_transit_qty,       color: 'var(--blue)' },
-            { label: 'Salvaged',     value: stats.salvaged_qty,         color: 'var(--purple)' },
-            { label: 'Reroutes',     value: stats.reroutes,             color: 'var(--orange)' },
-            { label: 'Avg Delivery', value: `${stats.avg_delivery_minutes ?? '—'}m`, color: 'var(--gray)' }
+            { label: 'Delivered',    value: stats.delivered_qty,                         cls: '' },
+            { label: 'Wasted',       value: stats.wasted_qty,           color:'var(--red)',    cls: 'stat-red' },
+            { label: 'In Transit',   value: stats.in_transit_qty,       color:'var(--blue)',   cls: 'stat-blue' },
+            { label: 'Salvaged',     value: stats.salvaged_qty,         color:'var(--purple)', cls: 'stat-purple' },
+            { label: 'Reroutes',     value: stats.reroutes,             color:'var(--orange)', cls: 'stat-orange' },
+            { label: 'Avg Delivery', value: `${stats.avg_delivery_minutes ?? '—'}m`,     cls: 'stat-gray' }
           ].map(s => (
-            <div className="stat-card" key={s.label}>
-              <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
+            <div className={`stat-card ${s.cls}`} key={s.label}>
+              <div className="stat-value" style={s.color ? { color: s.color } : {}}>{s.value}</div>
               <div className="stat-label">{s.label}</div>
             </div>
           ))}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './styles.css';
 import Nav from './components/Nav.jsx';
 import { usePolling } from './hooks/usePolling.js';
@@ -15,6 +15,18 @@ export default function App() {
   const [clock, setClock] = useState(null);
   const [apiError, setApiError] = useState(false);
 
+  // Dark mode — persist in localStorage
+  const [dark, setDark] = useState(() => localStorage.getItem('releaf-dark') === 'true');
+
+  useEffect(() => {
+    if (dark) {
+      document.body.classList.add('dark');
+    } else {
+      document.body.classList.remove('dark');
+    }
+    localStorage.setItem('releaf-dark', dark);
+  }, [dark]);
+
   usePolling(async () => {
     try {
       const c = await getClock();
@@ -27,22 +39,22 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case 'Dashboard':    return <Dashboard />;
-      case 'Donor':        return <DonorPage />;
-      case 'Rider':        return <RiderPage />;
-      case 'Shelter':      return <ShelterPage />;
+      case 'Dashboard':     return <Dashboard />;
+      case 'Donor':         return <DonorPage />;
+      case 'Rider':         return <RiderPage />;
+      case 'Shelter':       return <ShelterPage />;
       case 'Control Panel': return <ControlPanel />;
-      case 'Map':          return <MapPage />;
-      default:             return <Dashboard />;
+      case 'Map':           return <MapPage />;
+      default:              return <Dashboard />;
     }
   };
 
   return (
     <div>
-      <Nav page={page} setPage={setPage} clock={clock} />
+      <Nav page={page} setPage={setPage} clock={clock} dark={dark} setDark={setDark} />
 
       {apiError && (
-        <div className="alert alert-warn" style={{ margin: '10px 24px 0', borderRadius: 6 }}>
+        <div className="alert alert-warn" style={{ margin: '12px 24px 0', borderRadius: 8 }}>
           ⚠️ Backend offline — showing mock data
         </div>
       )}

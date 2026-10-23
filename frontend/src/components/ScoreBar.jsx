@@ -15,7 +15,7 @@ export default function ScoreBar({ value, showLabel = true }) {
       <div className="progress-bar" style={{ minWidth: '60px' }}>
         <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
       </div>
-      {showLabel && <span style={{ fontSize: '0.8rem', color: '#555' }}>{pct}%</span>}
+      {showLabel && <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{pct}%</span>}
     </div>
   );
 }
