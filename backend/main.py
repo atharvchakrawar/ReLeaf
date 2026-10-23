@@ -9,6 +9,7 @@ import clock
 import seed
 import planner
 import assignments
+import recovery
 
 app = FastAPI(title="ReLeaf Backend")
 
@@ -35,6 +36,7 @@ def on_startup():
     if cur.fetchone()["count"] == 0:
         seed.reset_and_seed()
     conn.close()
+    recovery.start_recovery_thread()
 
 
 @app.get("/health")
