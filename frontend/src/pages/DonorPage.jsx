@@ -174,7 +174,7 @@ export default function DonorPage() {
                 <Countdown safe_minutes_left={b.safe_minutes_left} expiry_minutes={b.safe_minutes_left + 20} />
 
                 <div style={{ fontSize: '0.76rem', color: '#aaa', marginTop: 6 }}>
-                  📍 {b.lat?.toFixed(3)}, {b.lng?.toFixed(3)} · ID: {b.id}
+                  📍 {(b.lat ?? b.location?.lat)?.toFixed(3)}, {(b.lng ?? b.location?.lng)?.toFixed(3)} · ID: {b.id}
                 </div>
               </div>
 

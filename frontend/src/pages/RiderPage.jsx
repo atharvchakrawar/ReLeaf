@@ -76,7 +76,16 @@ export default function RiderPage() {
   };
 
   const shelterName = (id) => shelters.find(s => s.id === id)?.name || id;
+  const formatHb = (hb) => {
+    if (hb == null) return '—';
+    if (typeof hb === 'number') return `t=${hb.toFixed(1)}`;
+    if (typeof hb === 'string') return hb.length > 16 ? hb.slice(11, 19) : hb;
+    return String(hb);
+  };
+
   const selectedRiderObj = riders?.find(r => r.id === selectedRider);
+  const riderLat = selectedRiderObj ? (selectedRiderObj.lat ?? selectedRiderObj.location?.lat) : null;
+  const riderLng = selectedRiderObj ? (selectedRiderObj.lng ?? selectedRiderObj.location?.lng) : null;
 
   return (
     <div className="page">
@@ -112,9 +121,9 @@ export default function RiderPage() {
                 Reliability: <ScoreBar value={selectedRiderObj.reliability / 100} />
                 <b>{selectedRiderObj.reliability}%</b>
               </span>
-              <span>Capacity: <b>{selectedRiderObj.capacity}</b></span>
+              <span>Capacity: <b>{selectedRiderObj.capacity ?? 30}</b></span>
               <span>Insulated bag: <b>{selectedRiderObj.has_insulated_bag ? '✅ Yes' : '❌ No'}</b></span>
-              <span>Last heartbeat: <b>t={selectedRiderObj.last_heartbeat?.toFixed(1)}</b></span>
+              <span>Last heartbeat: <b>{formatHb(selectedRiderObj.last_heartbeat)}</b></span>
             </div>
           )}
 
@@ -128,15 +137,14 @@ export default function RiderPage() {
                 <span style={{
                   display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
                   background: selectedRiderObj.status === 'unresponsive' ? 'var(--red)'
-                    : selectedRiderObj.status === 'in_transit' ? 'var(--orange)' : 'var(--green)',
-                  boxShadow: selectedRiderObj.status === 'unresponsive' ? 'none' : '0 0 0 3px rgba(45,122,45,0.2)',
-                  animation: selectedRiderObj.status === 'in_transit' ? 'riderPulse 1.4s ease-out infinite' : 'none'
+                    : selectedRiderObj.status === 'in_transit' || selectedRiderObj.status === 'en_route' ? 'var(--orange)' : 'var(--green)',
+                  boxShadow: selectedRiderObj.status === 'unresponsive' ? 'none' : '0 0 0 3px rgba(45,122,45,0.2)'
                 }} />
-                📍 Live Location: <b>{selectedRiderObj.lat?.toFixed(5)}, {selectedRiderObj.lng?.toFixed(5)}</b>
+                📍 Live Location: <b>{riderLat ? riderLat.toFixed(5) : '—'}, {riderLng ? riderLng.toFixed(5) : '—'}</b>
                 &nbsp;·&nbsp; Updating every 2s
               </div>
               <RiderMiniMap
-                rider={selectedRiderObj}
+                rider={{ ...selectedRiderObj, lat: riderLat ?? 18.52, lng: riderLng ?? 73.85 }}
                 allRiders={riders || []}
                 shelters={shelters}
                 job={jobs?.[0] || null}
@@ -278,9 +286,9 @@ export default function RiderPage() {
                       <span style={{ fontSize: '0.82rem' }}>{r.reliability}%</span>
                     </div>
                   </td>
-                  <td>{r.capacity}</td>
+                  <td>{r.capacity ?? 30}</td>
                   <td style={{ textAlign: 'center' }}>{r.has_insulated_bag ? '✅' : '—'}</td>
-                  <td style={{ fontSize: '0.82rem' }}>t={r.last_heartbeat?.toFixed(1)}</td>
+                  <td style={{ fontSize: '0.82rem' }}>{formatHb(r.last_heartbeat)}</td>
                 </tr>
               ))}
             </tbody>

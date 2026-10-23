@@ -79,7 +79,7 @@ export default function ControlPanel() {
         <div className="section-title">
           🕐 Simulation Clock
           {clock && <span style={{ fontWeight: 400, fontSize: '0.85rem', marginLeft: 10, color: '#888' }}>
-            t={clock.now?.toFixed(1)} · {clock.speed}×
+            {clock.sim_time ? clock.sim_time.slice(11, 19) : (clock.now != null ? `t=${clock.now.toFixed(1)}` : '—')} · {clock.speed}×
           </span>}
         </div>
         <div className="ctrl-row">

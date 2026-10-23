@@ -33,7 +33,7 @@ function ShelterCard({ shelter, assignments, onToggle, msgs }) {
           </span>
         </div>
         <span style={{ fontSize: '0.8rem', color: '#aaa' }}>
-          📍 {shelter.lat?.toFixed(3)}, {shelter.lng?.toFixed(3)}
+          📍 {(shelter.lat ?? shelter.location?.lat)?.toFixed(3)}, {(shelter.lng ?? shelter.location?.lng)?.toFixed(3)}
         </span>
       </div>
 
