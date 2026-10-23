@@ -1,26 +1,32 @@
 import React, { useState } from 'react';
-import { getBatches, getRiders, getAssignments, getStats, getEvents } from '../api.js';
+import { getStats, getBatches, getRiders, getAssignments, getEvents } from '../api.js';
 import { usePolling } from '../hooks/usePolling.js';
 import Countdown from '../components/Countdown.jsx';
 import ScoreBar from '../components/ScoreBar.jsx';
-import ExpandableWhy from '../components/ExpandableWhy.jsx';
 
-function formatTime(ts) {
-  try { return new Date(ts).toLocaleTimeString(); } catch { return ts; }
-}
+const ITEM_LABELS = {
+  cooked_food: '🍱 Cooked Food', medical: '💊 Medical',
+  ration_kit: '📦 Ration Kit', infant_formula: '🍼 Infant Formula'
+};
 
-function Spinner() {
-  return <div className="spinner" />;
-}
-
-function EmptyState({ icon, text }) {
+function WhyTooltip({ why }) {
+  const [open, setOpen] = useState(false);
+  if (!why || why.length === 0) return null;
   return (
-    <div className="empty-state">
-      <div className="empty-icon">{icon}</div>
-      <p>{text}</p>
+    <div>
+      <button className="expandable-btn" onClick={() => setOpen(o => !o)}>
+        {open ? '▲' : '▼ Why?'}
+      </button>
+      {open && (
+        <ul className="expandable-text" style={{ paddingLeft: 14, margin: '4px 0 0' }}>
+          {why.map((w, i) => <li key={i}>{w}</li>)}
+        </ul>
+      )}
     </div>
   );
 }
+
+function Spinner() { return <div className="spinner" />; }
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -43,12 +49,12 @@ export default function Dashboard() {
       {stats === null ? <Spinner /> : (
         <div className="stat-cards">
           {[
-            { label: 'Delivered',    value: stats.delivered,                        color: 'var(--green)' },
-            { label: 'Wasted',       value: stats.wasted,                           color: 'var(--red)' },
-            { label: 'In Transit',   value: stats.in_transit,                       color: 'var(--blue)' },
-            { label: 'Salvaged',     value: stats.salvaged,                         color: 'var(--purple)' },
-            { label: 'Reroutes',     value: stats.reroutes,                         color: 'var(--orange)' },
-            { label: 'Avg Delivery', value: `${stats.avg_delivery_time_minutes}m`,  color: 'var(--gray)' }
+            { label: 'Delivered',    value: stats.delivered_qty,        color: 'var(--green)' },
+            { label: 'Wasted',       value: stats.wasted_qty,           color: 'var(--red)' },
+            { label: 'In Transit',   value: stats.in_transit_qty,       color: 'var(--blue)' },
+            { label: 'Salvaged',     value: stats.salvaged_qty,         color: 'var(--purple)' },
+            { label: 'Reroutes',     value: stats.reroutes,             color: 'var(--orange)' },
+            { label: 'Avg Delivery', value: `${stats.avg_delivery_minutes ?? '—'}m`, color: 'var(--gray)' }
           ].map(s => (
             <div className="stat-card" key={s.label}>
               <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
@@ -61,22 +67,25 @@ export default function Dashboard() {
       {/* Batches */}
       <div className="section-title">📦 Batches</div>
       {batches === null ? <Spinner /> : batches.length === 0
-        ? <EmptyState icon="📭" text="No batches yet." />
+        ? <div className="empty-state"><div className="empty-icon">📭</div><p>No batches yet.</p></div>
         : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>ID</th><th>Donor</th><th>Item</th><th>Remaining</th><th>Status</th><th>Time Left</th></tr>
+                <tr><th>ID</th><th>Donor</th><th>Item</th><th>Remaining</th><th>Status</th><th>Risk</th><th>Safe Time</th></tr>
               </thead>
               <tbody>
                 {batches.map(b => (
-                  <tr key={b.id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{b.id}</td>
+                  <tr key={b.id} className={b.risk === 'critical' ? 'row-error' : b.risk === 'urgent' ? 'row-warning' : ''}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{b.id}</td>
                     <td><b>{b.donor_name}</b></td>
-                    <td>{b.item_type}</td>
-                    <td>{b.remaining_qty}/{b.total_qty}</td>
-                    <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
-                    <td><Countdown safe_minutes_left={b.safe_minutes_left} expiry_minutes={b.expiry_minutes} /></td>
+                    <td><span className={`badge badge-${b.item_type}`}>{ITEM_LABELS[b.item_type] || b.item_type}</span></td>
+                    <td>{b.remaining_qty}/{b.quantity}</td>
+                    <td><span className={`badge badge-${b.status}`}>{b.status.replace('_', ' ')}</span></td>
+                    <td><span className={`badge badge-${b.risk}`}>{b.risk}</span></td>
+                    <td>
+                      <Countdown safe_minutes_left={b.safe_minutes_left} expiry_minutes={b.safe_minutes_left + 20} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -87,21 +96,27 @@ export default function Dashboard() {
       {/* Riders */}
       <div className="section-title">🏍️ Riders</div>
       {riders === null ? <Spinner /> : riders.length === 0
-        ? <EmptyState icon="🛵" text="No riders registered." />
+        ? <div className="empty-state"><div className="empty-icon">🛵</div><p>No riders.</p></div>
         : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Name</th><th>Status</th><th>Trust</th><th>Reliability</th><th>Last Heartbeat</th></tr>
+                <tr><th>Name</th><th>Status</th><th>Reliability</th><th>Capacity</th><th>Bag 🧊</th><th>Last Heartbeat</th></tr>
               </thead>
               <tbody>
                 {riders.map(r => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={r.status === 'unresponsive' ? 'row-error' : ''}>
                     <td><b>{r.name}</b></td>
                     <td><span className={`badge badge-${r.status}`}>{r.status}</span></td>
-                    <td><ScoreBar value={r.trust_score} /></td>
-                    <td><ScoreBar value={r.reliability} /></td>
-                    <td style={{ fontSize: '0.82rem' }}>{formatTime(r.last_heartbeat)}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <ScoreBar value={r.reliability / 100} />
+                        <span style={{ fontSize: '0.8rem' }}>{r.reliability}%</span>
+                      </div>
+                    </td>
+                    <td>{r.capacity}</td>
+                    <td style={{ textAlign: 'center' }}>{r.has_insulated_bag ? '✅' : '—'}</td>
+                    <td style={{ fontSize: '0.82rem' }}>t={r.last_heartbeat?.toFixed(1)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -112,38 +127,45 @@ export default function Dashboard() {
       {/* Assignments */}
       <div className="section-title">📋 Assignments</div>
       {assignments === null ? <Spinner /> : assignments.length === 0
-        ? <EmptyState icon="📋" text="No assignments yet." />
+        ? <div className="empty-state"><div className="empty-icon">📋</div><p>No assignments.</p></div>
         : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>ID</th><th>Rider</th><th>Shelter</th><th>Item</th><th>Qty</th>
-                  <th>Status</th><th>Confidence</th><th>Plan B</th><th>Standby</th><th>Why?</th>
+                  <th>ID</th><th>Batch</th><th>Rider</th><th>Shelter</th><th>Qty</th>
+                  <th>Status</th><th>Stage</th><th>ETA</th><th>Confidence</th>
+                  <th>Plan B</th><th>Reroutes</th><th>Why?</th>
                 </tr>
               </thead>
               <tbody>
                 {assignments.map(a => (
-                  <tr key={a.assignment_id} className={a.status === 'rerouted' ? 'row-rerouted' : ''}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{a.assignment_id}</td>
-                    <td><b>{a.rider_name}</b></td>
-                    <td>{a.shelter_name}</td>
-                    <td>{a.item_type}</td>
-                    <td>{a.qty}</td>
+                  <tr key={a.id} className={a.reroute_count > 0 ? 'row-warning' : a.status === 'failed' ? 'row-error' : ''}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{a.id}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{a.batch_id}</td>
+                    <td>{a.rider_id}</td>
+                    <td>{a.shelter_id}</td>
+                    <td>{a.quantity}</td>
                     <td><span className={`badge badge-${a.status}`}>{a.status}</span></td>
+                    <td><span className={`badge badge-${a.stage}`}>{a.stage?.replace('_', ' ')}</span></td>
+                    <td style={{ fontSize: '0.85rem' }}>{a.eta_minutes?.toFixed(1)} min</td>
                     <td>
-                      <ScoreBar value={a.confidence} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <ScoreBar value={a.confidence / 100} />
+                        <span style={{ fontSize: '0.78rem' }}>{a.confidence}%</span>
+                      </div>
                     </td>
                     <td>
-                      {a.plan_b ? (
-                        <span className={`planb${a.status === 'rerouted' ? ' rerouted' : ''}`}>
-                          {a.plan_b.shelter_name} ({a.plan_b.eta_minutes}m)
-                          {a.status === 'rerouted' && ' ← ACTIVE'}
+                      {a.backup_shelter_id ? (
+                        <span className={`planb${a.reroute_count > 0 ? ' rerouted' : ''}`}>
+                          {a.backup_shelter_id}{a.reroute_count > 0 ? ' ← ACTIVE' : ''}
                         </span>
                       ) : '—'}
                     </td>
-                    <td style={{ fontSize: '0.82rem' }}>{a.standby_rider_name || '—'}</td>
-                    <td><ExpandableWhy explanation={a.explanation} /></td>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: a.reroute_count > 0 ? 'var(--orange)' : '#aaa' }}>
+                      {a.reroute_count || '—'}
+                    </td>
+                    <td><WhyTooltip why={a.why} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -152,25 +174,24 @@ export default function Dashboard() {
         )}
 
       {/* Event Timeline */}
-      <div className="section-title">📜 Event Timeline <span style={{ fontSize: '0.78rem', color: '#aaa', fontWeight: 400 }}>(newest first)</span></div>
+      <div className="section-title">
+        📜 Events <span style={{ fontSize: '0.78rem', color: '#aaa', fontWeight: 400 }}>(newest first)</span>
+      </div>
       {events === null ? <Spinner /> : events.length === 0
-        ? <EmptyState icon="📜" text="No events recorded yet." />
+        ? <div className="empty-state"><div className="empty-icon">📜</div><p>No events yet.</p></div>
         : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Time</th><th>Type</th><th>Severity</th><th>Message</th></tr>
+                <tr><th>Sim Time</th><th>Level</th><th>Message</th></tr>
               </thead>
               <tbody>
-                {events.map(e => (
-                  <tr key={e.id} className={e.severity === 'error' ? 'row-error' : e.severity === 'warning' ? 'row-warning' : ''}>
-                    <td style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{formatTime(e.timestamp)}</td>
-                    <td>
-                      <span className={`badge badge-${e.type}`} style={{ fontSize: '0.7rem' }}>
-                        {e.type.replace('_', ' ')}
-                      </span>
+                {events.map((e, i) => (
+                  <tr key={i} className={e.level === 'error' ? 'row-error' : e.level === 'warning' ? 'row-warning' : ''}>
+                    <td style={{ fontSize: '0.82rem', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                      t={typeof e.time === 'number' ? e.time.toFixed(1) : e.time}
                     </td>
-                    <td><span className={`badge badge-${e.severity}`}>{e.severity}</span></td>
+                    <td><span className={`badge badge-${e.level}`}>{e.level}</span></td>
                     <td style={{ fontSize: '0.88rem' }}>{e.message}</td>
                   </tr>
                 ))}
