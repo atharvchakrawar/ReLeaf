@@ -10,13 +10,6 @@ import ShelterPage from './pages/ShelterPage.jsx';
 import ControlPanel from './pages/ControlPanel.jsx';
 import MapPage from './pages/MapPage.jsx';
 
-function formatSimTime(ts) {
-  try {
-    const d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch { return ts; }
-}
-
 export default function App() {
   const [page, setPage] = useState('Dashboard');
   const [clock, setClock] = useState(null);
@@ -46,19 +39,9 @@ export default function App() {
 
   return (
     <div>
-      <Nav page={page} setPage={setPage} />
+      <Nav page={page} setPage={setPage} clock={clock} />
 
-      {clock && (
-        <div style={{ background: '#f0f9f0', borderBottom: '1px solid var(--border)', padding: '6px 24px', display: 'flex', gap: 12, alignItems: 'center', fontSize: '0.85rem' }}>
-          <span>🕐 Sim Time: <b>{formatSimTime(clock.sim_time)}</b></span>
-          <span style={{ background: 'var(--green-bg)', color: 'var(--green)', padding: '1px 8px', borderRadius: 10, fontSize: '0.78rem', fontWeight: 700 }}>
-            {clock.speed}× speed
-          </span>
-          {apiError && <span style={{ color: 'var(--orange)', fontWeight: 600 }}>⚠️ Backend offline — showing mock data</span>}
-        </div>
-      )}
-
-      {!clock && apiError && (
+      {apiError && (
         <div className="alert alert-warn" style={{ margin: '10px 24px 0', borderRadius: 6 }}>
           ⚠️ Backend offline — showing mock data
         </div>
