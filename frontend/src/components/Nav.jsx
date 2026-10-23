@@ -12,12 +12,18 @@ const PAGE_ICONS = {
 };
 
 export default function Nav({ page, setPage, clock, dark, setDark }) {
-  // Format sim time from float minutes to HH:MM
-  const formatClock = (now) => {
-    if (now == null) return '--:--';
-    const h = Math.floor(now / 60) % 24;
-    const m = Math.floor(now % 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  // Format sim time from sim_time ISO string or float minutes to HH:MM
+  const formatClock = (clk) => {
+    if (!clk) return '--:--';
+    if (clk.sim_time) {
+      return clk.sim_time.slice(11, 16);
+    }
+    if (clk.now != null) {
+      const h = Math.floor(clk.now / 60) % 24;
+      const m = Math.floor(clk.now % 60);
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return '--:--';
   };
 
   return (
@@ -41,7 +47,7 @@ export default function Nav({ page, setPage, clock, dark, setDark }) {
       <div className="clock-bar">
         {clock ? (
           <>
-            <span className="clock-time">🕐 {formatClock(clock.now)}</span>
+            <span className="clock-time">🕐 {formatClock(clock)}</span>
             <span className="clock-speed">{clock.speed ?? 1}×</span>
           </>
         ) : (
