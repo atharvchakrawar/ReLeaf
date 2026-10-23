@@ -107,28 +107,60 @@ let MOCK_RIDERS = [
   {
     id: 'r1', name: 'Amit Kumar', capacity: 40,
     lat: 18.521, lng: 73.851,
+    _baseLat: 18.521, _baseLng: 73.851,
     status: 'available', last_heartbeat: 12.3,
     reliability: 92, has_insulated_bag: true
   },
   {
     id: 'r2', name: 'Raj Patel', capacity: 30,
     lat: 18.519, lng: 73.849,
+    _baseLat: 18.519, _baseLng: 73.849,
+    // r2 is in_transit → moves toward Hope House (18.53, 73.86)
+    _targetLat: 18.53, _targetLng: 73.86,
     status: 'in_transit', last_heartbeat: 12.0,
     reliability: 67, has_insulated_bag: false
   },
   {
     id: 'r3', name: 'Priya Singh', capacity: 50,
     lat: 18.523, lng: 73.853,
+    _baseLat: 18.523, _baseLng: 73.853,
     status: 'available', last_heartbeat: 12.4,
     reliability: 88, has_insulated_bag: true
   },
   {
     id: 'r4', name: 'Deepak Sharma', capacity: 25,
     lat: 18.517, lng: 73.846,
+    _baseLat: 18.517, _baseLng: 73.846,
     status: 'unresponsive', last_heartbeat: 6.5,
     reliability: 45, has_insulated_bag: false
   }
 ];
+
+// Simulate rider movement every second for mock mode
+let _riderAnimT = 0;
+setInterval(() => {
+  _riderAnimT += 0.016; // ~1s tick normalised
+  MOCK_RIDERS = MOCK_RIDERS.map(r => {
+    if (r._targetLat && r.status === 'in_transit') {
+      // Move toward target at a slow pace (loop back after reaching)
+      const progress = (_riderAnimT * 0.012) % 1;
+      return {
+        ...r,
+        lat: r._baseLat + (r._targetLat - r._baseLat) * progress,
+        lng: r._baseLng + (r._targetLng - r._baseLng) * progress
+      };
+    }
+    // Idle/available riders drift slightly
+    if (r.status === 'available') {
+      return {
+        ...r,
+        lat: r._baseLat + Math.sin(_riderAnimT * 0.4 + r._baseLat * 100) * 0.00015,
+        lng: r._baseLng + Math.cos(_riderAnimT * 0.35 + r._baseLng * 100) * 0.00015
+      };
+    }
+    return r;
+  });
+}, 1000);
 
 let MOCK_ASSIGNMENTS = [
   {

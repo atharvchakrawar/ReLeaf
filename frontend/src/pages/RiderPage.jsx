@@ -3,6 +3,7 @@ import { getRiders, getRiderAssignments, assignPickup, assignDeliver, assignCanc
 import { usePolling } from '../hooks/usePolling.js';
 import Countdown from '../components/Countdown.jsx';
 import ScoreBar from '../components/ScoreBar.jsx';
+import RiderMiniMap from '../components/RiderMiniMap.jsx';
 
 const ITEM_LABELS = {
   cooked_food: '🍱 Cooked Food', medical: '💊 Medical',
@@ -114,6 +115,32 @@ export default function RiderPage() {
               <span>Capacity: <b>{selectedRiderObj.capacity}</b></span>
               <span>Insulated bag: <b>{selectedRiderObj.has_insulated_bag ? '✅ Yes' : '❌ No'}</b></span>
               <span>Last heartbeat: <b>t={selectedRiderObj.last_heartbeat?.toFixed(1)}</b></span>
+            </div>
+          )}
+
+          {/* Live location panel */}
+          {selectedRiderObj && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                fontSize: '0.83rem', color: 'var(--text-secondary)', marginBottom: 4
+              }}>
+                <span style={{
+                  display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                  background: selectedRiderObj.status === 'unresponsive' ? 'var(--red)'
+                    : selectedRiderObj.status === 'in_transit' ? 'var(--orange)' : 'var(--green)',
+                  boxShadow: selectedRiderObj.status === 'unresponsive' ? 'none' : '0 0 0 3px rgba(45,122,45,0.2)',
+                  animation: selectedRiderObj.status === 'in_transit' ? 'riderPulse 1.4s ease-out infinite' : 'none'
+                }} />
+                📍 Live Location: <b>{selectedRiderObj.lat?.toFixed(5)}, {selectedRiderObj.lng?.toFixed(5)}</b>
+                &nbsp;·&nbsp; Updating every 2s
+              </div>
+              <RiderMiniMap
+                rider={selectedRiderObj}
+                allRiders={riders || []}
+                shelters={shelters}
+                job={jobs?.[0] || null}
+              />
             </div>
           )}
         </div>
