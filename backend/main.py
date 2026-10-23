@@ -8,6 +8,7 @@ from db import init_db, get_db, log_event
 import clock
 import seed
 import planner
+import assignments
 
 app = FastAPI(title="ReLeaf Backend")
 
@@ -160,6 +161,65 @@ def suggest_plans_batch_route(batch_id: str):
     if "error" in res:
         raise HTTPException(status_code=404, detail=res["error"])
     return res
+
+
+# Assignment Endpoints
+@app.get("/assignments")
+def get_assignments_list():
+    return assignments.list_all_assignments()
+
+
+@app.post("/assign")
+@app.post("/assignments")
+async def create_assignment_route(request: Request):
+    data = await request.json()
+    batch_id = data.get("batch_id")
+    plan_id = data.get("plan_id")
+    rider_id = data.get("rider_id")
+    shelter_id = data.get("shelter_id")
+    if not batch_id:
+        raise HTTPException(status_code=400, detail="batch_id is required")
+    res, err = assignments.create_assignment(batch_id, plan_id, rider_id, shelter_id)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return res
+
+
+@app.post("/riders/{rider_id}/pickup")
+async def rider_pickup_route(rider_id: str, request: Request):
+    data = await request.json()
+    aid = data.get("assignment_id")
+    if not aid:
+        raise HTTPException(status_code=400, detail="assignment_id is required")
+    ok, err = assignments.pickup_assignment(rider_id, aid)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "picked_up"}
+
+
+@app.post("/riders/{rider_id}/deliver")
+async def rider_deliver_route(rider_id: str, request: Request):
+    data = await request.json()
+    aid = data.get("assignment_id")
+    code = data.get("confirm_code", "")
+    if not aid:
+        raise HTTPException(status_code=400, detail="assignment_id is required")
+    ok, err = assignments.deliver_assignment(rider_id, aid, code)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "delivered"}
+
+
+@app.post("/riders/{rider_id}/cancel")
+async def rider_cancel_route(rider_id: str, request: Request):
+    data = await request.json()
+    aid = data.get("assignment_id")
+    if not aid:
+        raise HTTPException(status_code=400, detail="assignment_id is required")
+    ok, err = assignments.cancel_assignment(rider_id, aid)
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "cancelled"}
 
 
 # Shelter Helpers
